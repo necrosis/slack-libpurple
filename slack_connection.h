@@ -1,26 +1,30 @@
 #ifndef _SLACK_CONNECTION_H
 #define _SLACK_CONNECTION_H
 
-/*system includes*/
+/*
 #include <glib/gi18n.h>
 
-/*purple includes*/
 #include <plugin.h>
 #include <prpl.h>
+*/
+
+#include "slack_plugin.h"
 
 typedef struct _SlackConnection
 {
-	PurpleAccount *account;
-	PurpleRoomlist *roomlist;
+	SlackAccount *sa;
 	PurpleConnection *gc;
 	PurpleSslConnection *gsc;
 	gchar *hostname;
-	GHashTable *channels;
+	gchar *token;
 	guint message_timer;
 	GList *queue;
 	gboolean needs_join;
 	gchar *desired_room;
 } SlackConnection;
+
+void
+slack_read_channels(SlackConnection * conn);
 
 
 #endif//_SLACK_CONNECTION_H
