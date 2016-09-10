@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 #include <stdlib.h>
 #include <debug.h>
+#include <blist.h>
 
 static size_t 
 writefunc(void *ptr, size_t size, size_t nmemb, string *s)
@@ -31,6 +32,7 @@ slack_process_channels_json(SlackAccount *sa, json_value *jobj)
 	// iterate through channels list
 	json_value *channels = json_get_value(jobj, "channels");
 	int length = channels->u.array.length;
+	PurpleGroup *group = NULL;
 	
 	for (int i = 0; i < length; i++)
 	{
@@ -44,15 +46,26 @@ slack_process_channels_json(SlackAccount *sa, json_value *jobj)
 		ch->name = g_strdup(name->u.str.ptr);
 		ch->purple_id = g_str_hash(id->u.str.ptr);
 
-		serv_got_joined_chat(sa->pc, g_str_hash(id->u.str.ptr), id->u.str.ptr);
+		if (!purple_find_buddy(sa->account, ch->name))
+		{
+			if (!group)
+			{
+				group = purple_find_group("Slack");
+				if (!group)
+				{
+					purple_debug_info(PROTOCOL_CODE, "Create group\n");
+					group = purple_group_new("Slack");
+					purple_blist_add_group(group, NULL);
+				}
+				purple_debug_info(PROTOCOL_CODE, "Usr add\n");
+				purple_blist_add_buddy(purple_buddy_new(sa->account, ch->name, NULL), NULL, group, NULL);
+			}
+		}
 
 		//TODO load history
-		//TODO get user list
 		//TODO start message poll
 
 		sa->channels = g_list_append(sa->channels, ch);
-
-		//purple_roomlist_room_add(roomlist, room);
 	}
 }
 
