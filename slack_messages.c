@@ -70,7 +70,7 @@ slack_channel_query(SlackConnection * conn)
 		string s = NULL_STRING;
 		create_string(&s, 0);
 
-		curl_easy_setopt(curl, CURLOPT_URL, "https://slack.com/api/channels.list?token=xoxp-37479727381-37710578004-71297034352-53a89da583");
+		curl_easy_setopt(curl, CURLOPT_URL, "https://slack.com/api/channels.list?token=xoxp-37479727381-37710578004-73740828260-ff3474037e");
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writefunc);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &s);
 

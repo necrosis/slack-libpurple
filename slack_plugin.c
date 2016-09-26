@@ -75,19 +75,19 @@ static PurplePluginProtocolInfo slack_protocol_info = {
 	 },
 	slack_list_icon,	/* list_icon */
 	NULL,			/* list_emblems */
-	slack_status_text,	/* status_text */
-	NULL,
+	NULL,			/* status_text */
+	NULL,			/* tooltip_text */
 	slack_statuses,		/* status_types */
 	NULL,			/* blist_node_menu */
-	slack_chat_info,	/* chat_info */
+	NULL,			/* chat_info */
 	NULL,			/* chat_info_defaults */
 	slack_chat_login,	/* login */
 	slack_chat_close,	/* close */
-	NULL,			/* send_im */
+	slack_send_im,		/* send_im */
 	NULL,			/* set_info */
 	NULL,			/* send_typing */
 	NULL,			/* get_info */
-	slack_set_status,	/* set_status */
+	NULL,			/* set_status */
 	NULL,			/* set_idle */
 	NULL,			/* change_passwd */
 	NULL,			/* add_buddy */
@@ -99,11 +99,11 @@ static PurplePluginProtocolInfo slack_protocol_info = {
 	NULL,			/* rem_permit */
 	NULL,			/* rem_deny */
 	NULL,			/* set_permit_deny */
-	slack_join_chat,	/* join_chat */			// TODO add join
+	slack_join_chat,	/* join_chat */	
 	NULL,			/* reject chat invite */
-	slack_get_chat_name,	/* get_chat_name */
+	NULL,			/* get_chat_name */
 	NULL,			/* chat_invite */
-	slack_chat_leave,	/* chat_leave */		// TODO add leave
+	NULL,			/* chat_leave */
 	NULL,			/* chat_whisper */
 	slack_chat_send,	/* chat_send */
 	NULL,			/* keepalive */
@@ -121,8 +121,8 @@ static PurplePluginProtocolInfo slack_protocol_info = {
 	NULL,			/* get_cb_real_name */
 	NULL,			/* set_chat_topic */
 	NULL,			/* find_blist_chat */
-	slack_roomlist_get_list,/* roomlist_get_list */
-	slack_roomlist_cancel,	/* roomlist_cancel */
+	NULL,			/* roomlist_get_list */
+	NULL,			/* roomlist_cancel */
 	NULL,			/* roomlist_expand_category */
 	NULL,			/* can_receive_file */
 	NULL,			/* send_file */
@@ -184,25 +184,19 @@ static void
 init_plugin(G_GNUC_UNUSED PurplePlugin *plugin)
 {
 	PurpleAccountUserSplit *split;
-	PurpleAccountOption *option_token, *option_limit;
+	PurpleAccountOption *option_token; 
 
-	split = purple_account_user_split_new(_("Hostname"), NULL, '@');
+	split = purple_account_user_split_new("Hostname", NULL, '@');
 	slack_protocol_info.user_splits =
 		g_list_append(slack_protocol_info.user_splits, split);
 
 	option_token =
-		purple_account_option_string_new(_("API token"), "api_token",
+		purple_account_option_string_new("API token", "api_token",
 						 NULL);
 	slack_protocol_info.protocol_options =
 		g_list_append(slack_protocol_info.protocol_options,
 			      option_token);
 
-	option_limit =
-		purple_account_option_int_new(_("Retrieve # msgs on join"),
-					      "limit", 10);
-	slack_protocol_info.protocol_options =
-		g_list_append(slack_protocol_info.protocol_options,
-			      option_limit);
 }
 
 PURPLE_INIT_PLUGIN(slack_plugin, init_plugin, info)

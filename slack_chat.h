@@ -1,11 +1,21 @@
 #ifndef _SLACK_CHAT_H
 #define _SLACK_CHAT_H
 
-#include <glib/gi18n.h>
+#include "slack_plugin.h"
 
+#include <glib/gi18n.h>
 #include <plugin.h>
 #include <prpl.h>
-#include <roomlist.h>
+
+typedef struct _SlackChannel
+{
+	SlackAccount *sa;
+	PurpleBuddy *buddy;
+	gchar *id;
+	gchar *name;
+	gint purple_id;
+	guint typeflag;
+} SlackChannel;
 
 // on slack login
 void 
@@ -16,24 +26,8 @@ void
 slack_chat_close(PurpleAccount * account);
 
 void
-slack_chat_buddy_free(PurpleBuddy * buddy);
-
-void
 slack_join_chat(PurpleConnection * gc, 
 		   GHashTable * data);
-
-void
-slack_chat_leave(PurpleConnection * gc, int id);
-
-gchar *
-slack_status_text(PurpleBuddy * buddy);
-
-void
-slack_set_status(PurpleAccount * acct,
-		 PurpleStatus * status);
-
-void
-slack_buddy_free(PurpleBuddy * buddy);
 
 const char *
 slack_list_icon(PurpleAccount * account,
@@ -42,26 +36,22 @@ slack_list_icon(PurpleAccount * account,
 GList *
 slack_statuses(PurpleAccount * acct);
 
-GList* 
-slack_chat_info(PurpleConnection * gc);
-
-char *
-slack_get_chat_name(GHashTable * data);
-
-char *
-slack_get_channel_name(GHashTable * data);
-
-PurpleRoomlist *
-slack_roomlist_get_list(PurpleConnection * gc);
-
-void
-slack_roomlist_cancel(PurpleRoomlist * list);
+void 
+slack_buddy_free(PurpleBuddy *buddy);
 
 int
 slack_chat_send(
 	PurpleConnection * gc, 
 	int id, 
 	const char *message,
+	PurpleMessageFlags flags
+);
+
+gint 
+slack_send_im(
+	PurpleConnection *pc, 
+	const gchar *who, 
+	const gchar *msg,
 	PurpleMessageFlags flags
 );
 #endif //_SLACK_CHAT_H
