@@ -44,11 +44,13 @@ typedef struct _SlackConnection {
 	SlackProxyCallbackErrorFunc error_callback;
 } SlackConnection;
 
+/*
 void
 slack_read_channels(SlackAccount* ac);
 
 void
 slack_read_channels_purple(SlackAccount* ac);
+*/
 
 
 /*******************************************/

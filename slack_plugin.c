@@ -184,18 +184,29 @@ static void
 init_plugin(G_GNUC_UNUSED PurplePlugin *plugin)
 {
 	PurpleAccountUserSplit *split;
-	PurpleAccountOption *option_token; 
+	PurpleAccountOption *option; 
 
 	split = purple_account_user_split_new("Hostname", NULL, '@');
 	slack_protocol_info.user_splits =
 		g_list_append(slack_protocol_info.user_splits, split);
 
-	option_token =
-		purple_account_option_string_new("API token", "api_token",
-						 NULL);
+	option = purple_account_option_string_new(
+		"API token", 
+		"api_token",
+		NULL
+	);
 	slack_protocol_info.protocol_options =
 		g_list_append(slack_protocol_info.protocol_options,
-			      option_token);
+			      option);
+
+	option = purple_account_option_string_new(
+		"Last message update time", 
+		"last_message_time",
+		NULL
+	);
+	slack_protocol_info.protocol_options =
+		g_list_append(slack_protocol_info.protocol_options,
+			      option);
 
 }
 

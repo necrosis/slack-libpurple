@@ -15,6 +15,9 @@ typedef struct _SlackAccount {
 	PurpleSslConnection *gsc;
 	gchar *token;
 	gboolean needs_join;
+	guint poll_timeout;
+	guint connection_timeout;
+	gchar *last_message_update_time;
 
 	GSList *dns_queries;
 	GHashTable *cookie_table;
@@ -22,8 +25,7 @@ typedef struct _SlackAccount {
 	GSList *conns; /**< A list of all active SteamConnections */
 	GQueue *waiting_conns; /**< A list of all SteamConnections waiting to process */
 
-
-	GList *channels;
+	GSList *channels;
 } SlackAccount;
 
 

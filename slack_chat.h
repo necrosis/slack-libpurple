@@ -21,9 +21,10 @@ typedef struct _SlackChannel
 void 
 slack_chat_login(PurpleAccount * account);
 
-// on slack close
+
 void
-slack_chat_close(PurpleAccount * account);
+slack_chat_close(PurpleConnection *pc);
+
 
 void
 slack_join_chat(PurpleConnection * gc, 
@@ -36,8 +37,10 @@ slack_list_icon(PurpleAccount * account,
 GList *
 slack_statuses(PurpleAccount * acct);
 
+
 void 
 slack_buddy_free(PurpleBuddy *buddy);
+
 
 int
 slack_chat_send(
@@ -46,6 +49,7 @@ slack_chat_send(
 	const char *message,
 	PurpleMessageFlags flags
 );
+
 
 gint 
 slack_send_im(

@@ -7,9 +7,9 @@
 #include <errno.h>
 #include <debug.h>
 #include <blist.h>
+#include <dnsquery.h>
 #include <status.h>
 #include <version.h>
-#include <dnsquery.h>
 #include <netinet/in.h>
 
 
@@ -21,6 +21,7 @@
 #define g_hostname_is_ip_address(hostname) (g_ascii_isdigit(hostname[0]) && g_strstr_len(hostname, 4, "."))
 #endif
 
+/*
 
 static size_t 
 writefunc(void *ptr, size_t size, size_t nmemb, string *s)
@@ -151,7 +152,7 @@ slack_read_channels_purple(SlackAccount* ac)
 	UNUSED(ac);
 	purple_debug_info(PROTOCOL_CODE, "Channels data update\n");
 }
-
+*/
 /**********************************************************/
 static void slack_attempt_connection(SlackConnection *);
 static void slack_next_connection(SlackAccount *sa);
@@ -725,8 +726,6 @@ get_or_post_request(
 		}
 	}
 
-	purple_debug_info(PROTOCOL_CODE, "Federal gunship\n");
-	
 	if (is_proxy == TRUE)
 	{
 		real_url = g_strdup_printf("http://%s%s", host, url);
@@ -737,8 +736,6 @@ get_or_post_request(
 	cookies = slack_cookies_to_string(sa);
 	user_agent = purple_account_get_string(sa->account, "user-agent", "Opera/9.50 (Windows NT 5.1; U; en-GB)");
 
-	purple_debug_info(PROTOCOL_CODE, "Cookies\n");
-	
 	if (method & SLACK_METHOD_POST && !postdata)
 		postdata = "";
 
@@ -782,8 +779,6 @@ get_or_post_request(
 	purple_util_chrreplace(language_names, '_', '-');
 	g_string_append_printf(request, "Accept-Language: %s\r\n", language_names);
 	g_free(language_names);
-
-	purple_debug_info(PROTOCOL_CODE, "getting url %s\n", url);
 
 	g_string_append_printf(request, "\r\n");
 	if (method & SLACK_METHOD_POST)
@@ -919,8 +914,6 @@ slack_attempt_connection(SlackConnection *slackcon)
 	}
 
 	if (slackcon->method & SLACK_METHOD_SSL) {
-		purple_debug_info(PROTOCOL_CODE, "getting url %s\n", slackcon->hostname);
-
 		slackcon->ssl_conn = purple_ssl_connect(
 					sa->account, 
 					slackcon->hostname,

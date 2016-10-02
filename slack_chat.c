@@ -5,11 +5,140 @@
 #include <cmds.h>
 #include <accountopt.h>
 #include <connection.h>
+#include <dnsquery.h>
+#include <time.h>
 #include <debug.h>
+
+static void 
+slack_check_state(SlackAccount *sa);
+
+
+gboolean 
+slack_timeout(gpointer userdata)
+{
+	SlackAccount *sa = userdata;
+	slack_check_state(sa);
+
+	// If no response within 3 minutes, assume connection lost and try again
+	purple_timeout_remove(sa->connection_timeout);
+	sa->connection_timeout = purple_timeout_add_seconds(3 * 60, slack_timeout, sa);
+
+	return FALSE;
+}
 
 
 static void
-slack_send_im_cb(SlackAccount *sa, json_value *obj, G_GNUC_UNUSED gpointer user_data)
+slack_check_new_messages_cb(
+		SlackAccount *sa, 
+		json_value *obj, 
+		gpointer user_data
+)
+{
+	SlackChannel *ch = user_data;
+	json_value *ok = json_get_value(obj, "ok");
+	if (ok->u.boolean)
+	{
+		json_value *latest = json_get_value(obj, "latest");
+		if (latest)
+			purple_account_set_string(sa->account, "last_message_time", latest->u.str.ptr);
+
+		json_value *messages = json_get_value(obj, "messages");
+
+		if (messages) 
+		{
+			int length = messages->u.array.length;
+
+			purple_debug_info(PROTOCOL_CODE, "Length: %d\n", length);
+			for (int i = 0; i < length; i++)
+			{
+				json_value *message = messages->u.array.values[i];
+				json_value *type = json_get_value(message, "type");
+
+				if (!g_strcmp0(type->u.str.ptr, "message"))
+				{
+					json_value *user = json_get_value(message, "user");
+					json_value *text = json_get_value(message, "text");
+					
+					purple_debug_info(
+							PROTOCOL_CODE, 
+							"Message from %s: %s", 
+							user->u.str.ptr, 
+							text->u.str.ptr
+					);
+				}
+			}
+		}
+	}
+	
+	json_value_free(obj);
+}
+
+static void
+slack_check_new_messages(
+	SlackAccount *sa, 
+	SlackChannel *ch, 
+	const gchar *last_message_time
+)
+{
+	if (ch->typeflag & BUDDY_CHANNEL)
+	{
+		GString *url = g_string_new("/api/channels.history?");
+
+		g_string_append_printf(url, "token=%s&", purple_url_encode(sa->token));
+		g_string_append_printf(url, "channel=%s&", purple_url_encode(ch->id));
+		g_string_append_printf(url, "oldest=%s", purple_url_encode(last_message_time));
+		
+		purple_debug_info(PROTOCOL_CODE, "URL: %s\n", url->str);
+
+		get_or_post_request(
+				sa, 
+				SLACK_METHOD_GET | SLACK_METHOD_SSL, 
+				NULL, 
+				url->str, 
+				NULL, 
+				slack_check_new_messages_cb, 
+				ch,
+				TRUE
+		);
+		
+		g_string_free(url, TRUE);
+	}
+}
+
+static void 
+slack_check_state(SlackAccount *sa)
+{
+	GString *unix_now = g_string_new("");
+	g_string_printf(unix_now, "%d.000000", (int)time(NULL));
+
+	const gchar *last_message_time = purple_account_get_string(
+						sa->account, 
+						"last_message_time", 
+						unix_now->str
+					);
+	
+
+	guint channels_amount = g_slist_length(sa->channels);
+
+	if (channels_amount) 
+	{
+		GSList *it;
+
+		for (it = sa->channels; it; it = it->next)
+			slack_check_new_messages(sa, it->data, last_message_time);
+	}
+
+	sa->poll_timeout = purple_timeout_add_seconds(3, slack_timeout, sa);
+	purple_debug_info(PROTOCOL_CODE, "new timeout sended\n");
+	g_string_free(unix_now, TRUE);
+}
+
+static void
+slack_send_im_cb(
+		G_GNUC_UNUSED SlackAccount *sa, 
+		json_value *obj, 
+		G_GNUC_UNUSED gpointer user_data
+)
 {
 	json_value *ok = json_get_value(obj, "ok");
 	if (!ok->u.boolean)
@@ -17,6 +146,8 @@ slack_send_im_cb(SlackAccount *sa, json_value *obj, G_GNUC_UNUSED gpointer user_
 		purple_debug_error(PROTOCOL_CODE, "Message send error\n");
 	}
 
+
+	json_value_free(obj);
 }
 
 gint 
@@ -24,7 +155,7 @@ slack_send_im(
 		PurpleConnection *pc, 
 		const gchar *who, 
 		const gchar *msg,
-		PurpleMessageFlags flags
+		G_GNUC_UNUSED PurpleMessageFlags flags
 )
 {
 	SlackAccount *sa = pc->proto_data;
@@ -51,7 +182,11 @@ slack_send_im(
 }
 
 static void
-slack_read_users_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
+slack_read_users_cb(
+		SlackAccount *sa, 
+		json_value *obj, 
+		G_GNUC_UNUSED gpointer user_data
+)
 {
 	json_value *ok = json_get_value(obj, "ok");
 	if (ok->u.boolean)
@@ -61,8 +196,6 @@ slack_read_users_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 		PurpleGroup *group = NULL;
 		const char *status_id = purple_primitive_get_id_from_type(PURPLE_STATUS_AVAILABLE);
 
-		purple_debug_info(PROTOCOL_CODE, "Users: %d\n", length);
-		
 		for (int i = 0; i< length; i++)
 		{
 			json_value *member = members->u.array.values[i];
@@ -74,8 +207,6 @@ slack_read_users_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 			json_value* id = json_get_value(member, "id");
 			json_value* name = json_get_value(member, "name");
 
-			purple_debug_info(PROTOCOL_CODE, "name %s\n", name->u.str.ptr);
-
 			SlackChannel *ch = g_new0(SlackChannel, 1);
 			ch->typeflag = BUDDY_USER;
 			ch->sa = sa;
@@ -86,8 +217,6 @@ slack_read_users_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 
 			if (!purple_find_buddy(sa->account, ch->id))
 			{
-				purple_debug_info(PROTOCOL_CODE, "%s not found\n", name->u.str.ptr);
-				
 				if (!group)
 				{
 					group = purple_find_group("Slack");
@@ -98,7 +227,6 @@ slack_read_users_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 					}
 					
 				}
-				purple_debug_info(PROTOCOL_CODE, "Usr add\n");
 				purple_blist_add_buddy(purple_buddy_new(sa->account, ch->id, NULL), NULL, group, NULL);
 			}
 
@@ -106,24 +234,28 @@ slack_read_users_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 			purple_prpl_got_user_status(sa->account, id->u.str.ptr, status_id, "message", NULL, NULL); // check status
 
 			//TODO load history
-			//TODO start message poll
 
-			sa->channels = g_list_append(sa->channels, ch);
+			sa->channels = g_slist_append(sa->channels, ch);
 		}
 	}
-	
+
+	purple_debug_info(PROTOCOL_CODE, "Trying to check state\n");
+	slack_check_state(sa);
 	json_value_free(obj);
 }
 
 static void
-slack_read_channels_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
+slack_read_channels_cb(
+		SlackAccount *sa, 
+		json_value *obj, 
+		G_GNUC_UNUSED gpointer user_data
+)
 {
 	json_value *ok = json_get_value(obj, "ok");
 	if (ok->u.boolean)
 	{
 		json_value *channels = json_get_value(obj, "channels");
 		int length = channels->u.array.length;
-		purple_debug_info(PROTOCOL_CODE, "Buddys %d\n", length);
 		PurpleGroup *group = NULL;
 		PurpleBuddy *buddy;
 		SlackBuddy *sbuddy;
@@ -134,8 +266,6 @@ slack_read_channels_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 			json_value *channel = channels->u.array.values[i];
 			json_value *id = json_get_value(channel, "id");
 			json_value *name = json_get_value(channel, "name");
-
-			purple_debug_info(PROTOCOL_CODE, "name %s\n", name->u.str.ptr);
 
 			SlackChannel *ch = g_new0(SlackChannel, 1);
 			ch->typeflag = BUDDY_CHANNEL;
@@ -148,8 +278,6 @@ slack_read_channels_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 
 			if (!buddy)
 			{
-				purple_debug_info(PROTOCOL_CODE, "%s not found\n", name->u.str.ptr);
-				
 				if (!group)
 				{
 					group = purple_find_group("Slack");
@@ -160,7 +288,6 @@ slack_read_channels_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 					}
 					
 				}
-				purple_debug_info(PROTOCOL_CODE, "Usr add\n");
 				buddy = purple_buddy_new(sa->account, ch->id, NULL);
 				sbuddy = g_new0(SlackBuddy, 1);
 				buddy->proto_data = sbuddy;
@@ -182,17 +309,16 @@ slack_read_channels_cb(SlackAccount *sa, json_value *obj, gpointer user_data)
 			}
 			serv_got_alias(sa->pc, sbuddy->slack_id, sbuddy->nickname);
 			purple_prpl_got_user_status(sa->account, id->u.str.ptr, status_id, "message", NULL, NULL); // check status
-			//purple_serv_got_private_alias(sa->pc, name->u.str.ptr, id->u.str.ptr);
 
 			//TODO load history
 			//TODO start message poll
 
-			sa->channels = g_list_append(sa->channels, ch);
+			sa->channels = g_slist_append(sa->channels, ch);
 		}
 	}
 
-	
 	json_value_free(obj);
+	slack_check_state(sa);
 }
 
 void
@@ -202,8 +328,6 @@ slack_get_channels(SlackAccount* sa)
 	GString *url = g_string_new("/api/channels.list?");
 	g_string_append_printf(url, "token=%s", purple_url_encode(sa->token));
 
-	purple_debug_info("slack", "URL: %s\n", url->str);
-	
 	get_or_post_request(
 			sa, 
 			SLACK_METHOD_GET | SLACK_METHOD_SSL, 
@@ -266,6 +390,7 @@ slack_chat_login(PurpleAccount * account)
 	sa->pc = gc;
 	sa->cookie_table = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	sa->token = g_strdup(slack_token);
+	sa->channels = NULL;
 
 	sa->hostname_ip_cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	//sa->sent_messages_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
@@ -277,11 +402,9 @@ slack_chat_login(PurpleAccount * account)
 	purple_connection_set_state(gc, PURPLE_CONNECTING);
 	purple_connection_update_progress(gc, _("Logging in"), 1, 4);
 
-	// TODO get real name
 	//acc->hostname = g_strdup("necrosis");
 	purple_connection_set_display_name(gc, "necrosis");
 
-	purple_debug_info("slack", "username: %s\n", username);
 	//purple_debug_info("slack", "hostname: %s\n", acc->hostname);
 	/*
 	purple_cmd_register(SLACK_CMD_MESSAGE, "s", PURPLE_CMD_P_PRPL, f, prpl_id,
@@ -292,10 +415,6 @@ slack_chat_login(PurpleAccount * account)
 	purple_connection_set_state(gc, PURPLE_CONNECTED);
 
 	slack_get_channels(sa);
-		
-	purple_debug_info("slack", "url finished\n");
-	
-	//slack_read_channels(acc);
 }
 
 void 
@@ -315,9 +434,45 @@ slack_buddy_free(PurpleBuddy *buddy)
 }
 
 void
-slack_chat_close(G_GNUC_UNUSED PurpleAccount * account)
+slack_chat_close(PurpleConnection *pc)
 {
-	purple_debug_info(PROTOCOL_CODE, "Chat close\n");
+	SlackAccount *sa;
+
+	g_return_if_fail(pc != NULL);
+	g_return_if_fail(pc->proto_data != NULL);
+
+	sa = pc->proto_data;
+
+	if (sa->poll_timeout)
+		purple_timeout_remove(sa->poll_timeout);
+
+	if (sa->connection_timeout)
+		purple_timeout_remove(sa->connection_timeout);
+
+	
+	while (!g_queue_is_empty(sa->waiting_conns))
+		slack_connection_destroy(g_queue_pop_tail(sa->waiting_conns));
+	g_queue_free(sa->waiting_conns);
+
+
+	while (sa->conns != NULL)
+		slack_connection_destroy(sa->conns->data);
+
+	while (sa->dns_queries != NULL) 
+	{
+		PurpleDnsQueryData *dns_query = sa->dns_queries->data;
+		purple_debug_info(SLACK_PLUGIN_ID, "canceling dns query for %s\n",
+					purple_dnsquery_get_host(dns_query));
+		sa->dns_queries = g_slist_remove(sa->dns_queries, dns_query);
+		purple_dnsquery_destroy(dns_query);
+	}
+
+
+	g_hash_table_destroy(sa->cookie_table);
+	g_hash_table_destroy(sa->hostname_ip_cache);
+
+	g_free(sa->token);
+	g_free(sa);
 }
 
 void
@@ -355,9 +510,9 @@ slack_statuses(G_GNUC_UNUSED PurpleAccount * acct)
 
 int
 slack_chat_send(
-	PurpleConnection * gc, 
-	int id, 
-	const char *message,
+	G_GNUC_UNUSED PurpleConnection * gc, 
+	G_GNUC_UNUSED int id, 
+	G_GNUC_UNUSED const char *message,
 	G_GNUC_UNUSED PurpleMessageFlags flags
 )
 {
