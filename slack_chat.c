@@ -46,9 +46,10 @@ slack_check_new_messages_cb(
 
 		if (messages) 
 		{
+			gchar *html;
+			gdouble timestamp;
 			int length = messages->u.array.length;
 
-			purple_debug_info(PROTOCOL_CODE, "Length: %d\n", length);
 			for (int i = 0; i < length; i++)
 			{
 				json_value *message = messages->u.array.values[i];
@@ -58,13 +59,38 @@ slack_check_new_messages_cb(
 				{
 					json_value *user = json_get_value(message, "user");
 					json_value *text = json_get_value(message, "text");
+					json_value *ts = json_get_value(message, "ts");
+
+					timestamp = g_strtod(ts->u.str.ptr, NULL);
 					
+					html = purple_markup_escape_text(text->u.str.ptr, -1);
 					purple_debug_info(
 							PROTOCOL_CODE, 
 							"Message from %s: %s", 
 							user->u.str.ptr, 
 							text->u.str.ptr
 					);
+					PurpleConversation *conv = purple_find_conversation_with_account(
+									PURPLE_CONV_TYPE_IM, 
+									ch->name, 
+									sa->account
+					);
+					if (conv == NULL)
+					{
+						conv = purple_conversation_new(PURPLE_CONV_TYPE_IM, sa->account, ch->name);
+					}
+					purple_conversation_write(conv, ch->name, html, PURPLE_MESSAGE_SEND, timestamp);
+
+					/*
+					serv_got_im(
+						sa->pc, 
+						ch->name,
+						html, 
+						PURPLE_MESSAGE_RECV, 
+						timestamp
+					);
+					*/
+					g_free(html);
 				}
 			}
 		}
@@ -129,7 +155,6 @@ slack_check_state(SlackAccount *sa)
 	}
 
 	sa->poll_timeout = purple_timeout_add_seconds(3, slack_timeout, sa);
-	purple_debug_info(PROTOCOL_CODE, "new timeout sended\n");
 	g_string_free(unix_now, TRUE);
 }
 
@@ -227,21 +252,34 @@ slack_read_users_cb(
 					}
 					
 				}
-				purple_blist_add_buddy(purple_buddy_new(sa->account, ch->id, NULL), NULL, group, NULL);
+				purple_blist_add_buddy(
+						purple_buddy_new(sa->account, ch->id, NULL), 
+						NULL, 
+						group, 
+						NULL
+				);
 			}
 
-			purple_serv_got_private_alias(sa->pc, name->u.str.ptr, id->u.str.ptr);
-			purple_prpl_got_user_status(sa->account, id->u.str.ptr, status_id, "message", NULL, NULL); // check status
-
-			//TODO load history
+			purple_serv_got_private_alias(
+					sa->pc, 
+					name->u.str.ptr, 
+					id->u.str.ptr
+			);
+			purple_prpl_got_user_status(
+					sa->account, 
+					id->u.str.ptr, 
+					status_id, 
+					"message", 
+					NULL, 
+					NULL
+			); // check status
 
 			sa->channels = g_slist_append(sa->channels, ch);
 		}
 	}
-
-	purple_debug_info(PROTOCOL_CODE, "Trying to check state\n");
-	slack_check_state(sa);
 	json_value_free(obj);
+
+	slack_check_state(sa);
 }
 
 static void
@@ -307,17 +345,23 @@ slack_read_channels_cb(
 				sbuddy->avatar = NULL;
 				sbuddy->personflags = BUDDY_CHANNEL;
 			}
-			serv_got_alias(sa->pc, sbuddy->slack_id, sbuddy->nickname);
-			purple_prpl_got_user_status(sa->account, id->u.str.ptr, status_id, "message", NULL, NULL); // check status
 
-			//TODO load history
-			//TODO start message poll
+			serv_got_alias(sa->pc, sbuddy->slack_id, sbuddy->nickname);
+			purple_prpl_got_user_status(
+					sa->account, 
+					id->u.str.ptr, 
+					status_id, 
+					"message", 
+					NULL, 
+					NULL
+			); // check status
 
 			sa->channels = g_slist_append(sa->channels, ch);
 		}
 	}
 
 	json_value_free(obj);
+
 	slack_check_state(sa);
 }
 
