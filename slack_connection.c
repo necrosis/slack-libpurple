@@ -4,13 +4,19 @@
 #include <curl/curl.h>
 #include <zlib.h>
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <debug.h>
+#include <unistd.h>
 #include <blist.h>
 #include <dnsquery.h>
 #include <status.h>
 #include <version.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netdb.h>
 
 
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
@@ -20,6 +26,8 @@
 #if !GLIB_CHECK_VERSION (2, 22, 0)
 #define g_hostname_is_ip_address(hostname) (g_ascii_isdigit(hostname[0]) && g_strstr_len(hostname, 4, "."))
 #endif
+
+#define h_addr h_addr_list[0]
 
 /*
 
@@ -397,6 +405,17 @@ slack_fatal_connection_cb(SlackConnection *slackcon)
 
 }
 
+static void
+slack_ans_timeout(gpointer userdata)
+{
+	SlackConnection *slackcon = userdata;
+	SlackAccount *sa = slackcon->sa;
+
+	slack_connection_process_data(slackcon);
+	slack_connection_destroy(slackcon);
+	slack_next_connection(sa);
+}
+
 static void 
 slack_post_or_get_readdata_cb(
 	gpointer data, 
@@ -472,6 +491,11 @@ slack_post_or_get_readdata_cb(
 
 		/* Wait for more data before processing */
 		return;
+	}
+
+	if (slackcon->method & SLACK_METHOD_RTM) 
+	{
+		slackcon->timeout_rtm_recv = purple_timeout_add_seconds(120, slack_ans_timeout, slackcon);
 	}
 
 	/* The server closed the connection, let's parse the data */
@@ -930,4 +954,65 @@ slack_attempt_connection(SlackConnection *slackcon)
 	slackcon->timeout_watcher = purple_timeout_add_seconds(120, slack_connection_timedout, slackcon);
 
 	return;
+}
+
+
+
+
+SlackWSConnection *
+slack_start_rtm_session(
+	SlackAccount *sa,
+	GSourceFunc callback_func,
+	const gchar *host, 
+	int port,
+	const gchar *url
+)
+{
+	SlackWSConnection *slackcon;
+	struct hostent *server;
+	struct sockaddr_in serv_addr;
+
+	purple_debug_info(PROTOCOL_CODE, "Trying to connect to websocket:\n%s\n", host);
+	slackcon = g_new0(SlackWSConnection, 1);
+	slackcon->sa = sa;
+
+	slackcon->socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+	server = gethostbyname(host);
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+
+	serv_addr.sin_family = AF_INET;
+	bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+	serv_addr.sin_port = htons(port);
+
+	if (connect(slackcon->socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
+	{
+		purple_debug_error(PROTOCOL_CODE, "Error on connecting:\n");
+		g_free(slackcon);
+		return NULL;
+	}
+
+	if (!start_websocket_session(slackcon->socket_fd, host, url))
+	{
+		purple_debug_error(PROTOCOL_CODE, "Error on starting session\n%s\n");
+		g_free(slackcon);
+		return NULL;
+	}
+
+	sa->rtm = slackcon;
+	slackcon->poll_timeout = purple_timeout_add_seconds(1, callback_func, slackcon);
+
+	return slackcon;
+}
+
+void
+slack_colose_rtm_session(
+	SlackAccount *sa
+)
+{
+	SlackWSConnection* sc = sa->rtm;
+	if (!sc)
+		return;
+
+	purple_timeout_remove(sc->poll_timeout);
+	close_websocket_session(sc->socket_fd);
 }

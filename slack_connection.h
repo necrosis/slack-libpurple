@@ -15,12 +15,14 @@
 
 typedef void (*SlackProxyCallbackFunc)(SlackAccount *sa, json_value *obj, gpointer user_data);
 typedef void (*SlackProxyCallbackErrorFunc)(SlackAccount *sa, const gchar *data, gssize data_len, gpointer user_data);
+typedef gboolean (*SlackRTMCallbackFunc)(gpointer userdata);
 
 typedef enum
 {
 	SLACK_METHOD_GET  = 0x0001,
 	SLACK_METHOD_POST = 0x0002,
-	SLACK_METHOD_SSL  = 0x0004
+	SLACK_METHOD_SSL  = 0x0004,
+	SLACK_METHOD_RTM  = 0x0008
 } SlackMethod;
 
 typedef struct _SlackConnection {
@@ -41,8 +43,18 @@ typedef struct _SlackConnection {
 	time_t request_time;
 	guint retry_count;
 	guint timeout_watcher;
+	guint timeout_rtm_recv;
+	guint access_times;
 	SlackProxyCallbackErrorFunc error_callback;
 } SlackConnection;
+
+
+typedef struct _SlackWSConnection {
+	SlackAccount *sa;
+	int socket_fd;
+	guint poll_timeout;
+	guint ping_timeout;
+} SlackWSConnection;
 
 /*
 void
@@ -73,6 +85,19 @@ get_or_post_request(
 	gboolean keepalive
 );
 
+SlackWSConnection *
+slack_start_rtm_session(
+	SlackAccount *sa,
+	GSourceFunc callback_func,
+	const gchar *host, 
+	int port,
+	const gchar *url
+);
+
+void
+slack_colose_rtm_session(
+	SlackAccount *sa
+);
 
 /*******************************************/
 

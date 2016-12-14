@@ -1,6 +1,7 @@
 #include "slack_common.h"
 #include "slack_connection.h"
 #include "slack_chat.h"
+#include "miniwebsock.h"
 //#include "slack_messages.h"
 #include <cmds.h>
 #include <accountopt.h>
@@ -11,6 +12,37 @@
 
 static void 
 slack_check_state(SlackAccount *sa);
+
+gboolean
+slack_rtp_poll(gpointer userdata)
+{
+	SlackWSConnection *slackcon = userdata;
+	SlackAccount *sa = slackcon->sa;
+
+	purple_debug_info(PROTOCOL_CODE, "Poll\n");
+
+	frame_value val = poll_frame(slackcon->socket_fd);
+
+	if (val.type == frame_text)
+	{
+		purple_debug_info(PROTOCOL_CODE, "Get text: %s\n", val.data);
+
+		/*
+		int len = strlen(val.data);
+		json_value* json = json_parse(val.data, len);
+		
+		if (json == NULL)
+		{
+			json_value* type = json_get_value(json, "type");	
+		}
+		*/
+	}
+
+	g_free(val.data);
+
+	slackcon->poll_timeout = purple_timeout_add_seconds(1, slack_rtp_poll, slackcon);
+	return FALSE;
+}
 
 
 gboolean 
@@ -439,6 +471,7 @@ slack_chat_login(PurpleAccount * account)
 	sa->hostname_ip_cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	//sa->sent_messages_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 	sa->waiting_conns = g_queue_new();
+	sa->rtm = NULL;
 	//sa->last_message_timestamp = purple_account_get_int(sa->account, "last_message_timestamp", 0);
 
 	const char *username = purple_account_get_username(account);
