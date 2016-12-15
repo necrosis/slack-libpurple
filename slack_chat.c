@@ -1,3 +1,4 @@
+#include "util.h"
 #include "slack_common.h"
 #include "slack_connection.h"
 #include "slack_chat.h"
@@ -14,7 +15,7 @@ static void
 slack_check_state(SlackAccount *sa);
 
 gboolean
-slack_rtp_poll(gpointer userdata)
+slack_rtm_poll(gpointer userdata)
 {
 	SlackWSConnection *slackcon = userdata;
 	SlackAccount *sa = slackcon->sa;
@@ -40,7 +41,7 @@ slack_rtp_poll(gpointer userdata)
 
 	g_free(val.data);
 
-	slackcon->poll_timeout = purple_timeout_add_seconds(1, slack_rtp_poll, slackcon);
+	slackcon->poll_timeout = purple_timeout_add_seconds(1, slack_rtm_poll, slackcon);
 	return FALSE;
 }
 
@@ -315,6 +316,53 @@ slack_read_users_cb(
 }
 
 static void
+slack_rtm_request_cb(
+		SlackAccount *sa, 
+		json_value *obj, 
+		G_GNUC_UNUSED gpointer user_data
+)
+{
+	json_value *ok = json_get_value(obj, "ok");
+	if (ok->u.boolean)
+	{
+		json_value *url = json_get_value(obj, "url");
+		gchar *rtm_url = remove_char(url->u.str.ptr, '\\');
+
+		gchar *rtm_host_end = g_strstr_len(rtm_url+5, -1, "/");
+		gchar *host = g_strndup(rtm_url+5, (gsize)(rtm_host_end - rtm_url - 5));
+		gchar *req = g_strdup(rtm_host_end+1);
+		// TODO parse other json url and replace EventAPI
+		
+		slack_start_rtm_session(sa, slack_rtm_poll, host, 80, req);
+
+		g_free(rtm_url);
+		g_free(host);
+	}
+}
+
+static void
+slack_rtm_request(
+		SlackAccount *sa
+)
+{
+	GString *url = g_string_new("/api/rtm.start?");
+	g_string_append_printf(url, "token=%s", purple_url_encode(sa->token));
+
+	get_or_post_request(
+			sa, 
+			SLACK_METHOD_GET | SLACK_METHOD_SSL, 
+			NULL, 
+			url->str, 
+			NULL, 
+			slack_rtm_request_cb, 
+			NULL, 
+			TRUE
+	);
+	g_string_free(url, TRUE);
+
+}
+
+static void
 slack_read_channels_cb(
 		SlackAccount *sa, 
 		json_value *obj, 
@@ -394,7 +442,7 @@ slack_read_channels_cb(
 
 	json_value_free(obj);
 
-	slack_check_state(sa);
+	// slack_check_state(sa); TODO Uncomment
 }
 
 void
@@ -543,6 +591,10 @@ slack_chat_close(PurpleConnection *pc)
 		sa->dns_queries = g_slist_remove(sa->dns_queries, dns_query);
 		purple_dnsquery_destroy(dns_query);
 	}
+
+
+	if (sa->rtm)
+		slack_colose_rtm_session(sa);
 
 
 	g_hash_table_destroy(sa->cookie_table);
